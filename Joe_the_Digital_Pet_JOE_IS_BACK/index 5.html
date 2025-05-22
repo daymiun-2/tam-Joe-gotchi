@@ -1,0 +1,291 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tam-Joe-Gotchi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+    }
+    canvas {
+      background: #fff;
+      border: 2px solid #ccc;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin: 12px 0;
+    }
+    .toolbar button {
+      font-size: 28px;
+      background: #eee;
+      border: none;
+      border-radius: 6px;
+      padding: 8px;
+      cursor: pointer;
+    }
+    .meters {
+      display: flex;
+      gap: 16px;
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    #log {
+      font-size: 14px;
+      margin-top: 10px;
+      width: 100%;
+      max-width: 400px;
+      height: 80px;
+      overflow-y: auto;
+      background: #f3f3f3;
+      border-radius: 6px;
+      padding: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Tam-Joe-Gotchi</h2>
+  <div class="meters">
+    <div>😊 Happiness: <span id="happiness">100</span></div>
+    <div>⚡ Energy: <span id="energy">100</span></div>
+    <div>🍻 Drunkness: <span id="drunkness">0</span></div>
+  </div>
+  <canvas id="gameCanvas" width="360" height="480"></canvas>
+  <div class="toolbar">
+    <button onclick="rideMotorcycle()">🏍️</button>
+    <button onclick="dropBeer()">🍺</button>
+    <button onclick="dropCig()">🚬</button>
+    <button onclick="punchJoe()">👊</button>
+  </div>
+  <div id="log"></div>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const log = document.getElementById('log');
+
+    const joeImg = new Image(); joeImg.src = 'assets/joe.png';
+    const drunkImg = new Image(); drunkImg.src = 'assets/drunk.png';
+    const owImg = new Image(); owImg.src = 'assets/ow.png';
+
+    let currentImg = joeImg;
+    let wiggleTime = 0;
+    let onMotorcycle = false;
+    let motoTimer = 0;
+    let motoVX = 0;
+    let motoVY = 0;
+    let zParticles = [];
+    let punchOverlay = false;
+
+    let happiness = 100, energy = 100, drunkness = 0;
+    let beer = null, cig = null, owTimer = 0;
+    let passedOut = false;
+
+    const joe = { x: 180, y: 240, size: 120 };
+    let target = null;
+
+    function drawEmoji(emoji, x, y) {
+      ctx.font = "36px serif";
+      ctx.textAlign = "center";
+      ctx.fillText(emoji, x, y);
+    }
+
+    function moveJoeTowardTarget() {
+      if (target && !passedOut && owTimer <= 0) {
+        const dx = target.x - joe.x;
+        const dy = target.y - joe.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = 2;
+        if (dist > speed) {
+          joe.x += (dx / dist) * speed;
+          joe.y += (dy / dist) * speed;
+        } else {
+          if (target.type === "beer") {
+            drunkness = Math.min(100, drunkness + 10);
+            happiness = Math.min(100, happiness + 5);
+            logAction(getDrunkBeerMessage());
+            if (drunkness >= 100) {
+              passedOut = true;
+              logAction("Joe passed out.");
+            }
+            beer = null;
+          } else if (target.type === "cig") {
+            logAction("Joe caught a cigarette.");
+            cig = null;
+          }
+          target = null;
+        }
+      }
+    }
+
+    function draw() {
+      wiggleTime += 0.1;
+
+      if (onMotorcycle) {
+        joe.x += motoVX;
+        joe.y += motoVY;
+        motoTimer--;
+        if (motoTimer <= 0) {
+          onMotorcycle = false;
+          logAction("Joe got off his motorcycle.");
+        }
+        if (joe.x < joe.size / 2 || joe.x > canvas.width - joe.size / 2) motoVX *= -1;
+        if (joe.y < joe.size / 2 || joe.y > canvas.height - joe.size / 2) motoVY *= -1;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      moveJoeTowardTarget();
+
+      if (owTimer > 0) {
+        punchOverlay = true;
+        currentImg = owImg;
+        owTimer--;
+      } else if (passedOut) {
+        currentImg = drunkImg;
+        ctx.font = "24px serif";
+        ctx.fillText("💤", joe.x, joe.y - 80);
+      } else if (drunkness >= 75) {
+        currentImg = drunkImg;
+        joe.x += Math.random() * 2 - 1;
+        joe.y += Math.random() * 2 - 1;
+      } else {
+        currentImg = joeImg;
+        punchOverlay = false;
+      }
+
+      if (passedOut) {
+        ctx.save();
+        ctx.translate(joe.x, joe.y);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(currentImg, -joe.size / 2, -joe.size / 2, joe.size, joe.size);
+        ctx.restore();
+
+        zParticles.forEach(z => {
+          ctx.globalAlpha = z.alpha;
+          drawEmoji("💤", z.x, z.y);
+          ctx.globalAlpha = 1;
+          z.y -= 0.3;
+          z.alpha -= 0.005;
+        });
+        zParticles = zParticles.filter(z => z.alpha > 0);
+        if (Math.random() < 0.02) {
+          zParticles.push({ x: joe.x + 30, y: joe.y - 60, alpha: 1 });
+        }
+      } else {
+        ctx.save();
+        ctx.translate(joe.x, joe.y);
+        if (!onMotorcycle && drunkness >= 10) {
+          const intensity = (drunkness - 10) / 90;
+          const scale = 1 + Math.sin(wiggleTime * 2) * 0.06 * intensity;
+          const rotation = Math.sin(wiggleTime * 5) * 0.25 * intensity;
+          ctx.rotate(rotation);
+          ctx.scale(scale, scale);
+        }
+        ctx.drawImage(currentImg, -joe.size / 2, -joe.size / 2, joe.size, joe.size);
+        ctx.restore();
+      }
+
+      if (punchOverlay && owTimer > 0) {
+        drawEmoji("👊", joe.x, joe.y);
+      }
+
+      if (beer) drawEmoji("🍺", beer.x, beer.y);
+
+      if (cig) {
+        cig.y += cig.vy;
+        cig.vy += 0.1;
+        if (cig.y > canvas.height - 20) {
+          cig.y = canvas.height - 20;
+          cig.vy *= -0.6;
+        }
+        drawEmoji("🚬", cig.x, cig.y);
+        if (!target) target = { x: cig.x, y: cig.y, type: "cig" };
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    function updateMeters() {
+      if (!passedOut) {
+        happiness = Math.max(0, happiness - 0.07);
+        energy = Math.max(0, energy - 0.07);
+        drunkness = Math.max(0, drunkness - 0.028);
+      } else {
+        drunkness = Math.max(0, drunkness - 0.14);
+        if (drunkness < 97) {
+          passedOut = false;
+          logAction("Joe woke up.");
+        }
+      }
+      document.getElementById('happiness').textContent = Math.round(happiness);
+      document.getElementById('energy').textContent = Math.round(energy);
+      document.getElementById('drunkness').textContent = Math.round(drunkness);
+    }
+
+    setInterval(updateMeters, 500);
+
+    function dropBeer() {
+      if (passedOut) return;
+      const x = Math.random() * 320 + 20;
+      const y = Math.random() * 440 + 20;
+      beer = { x, y };
+      target = { x, y, type: "beer" };
+    }
+
+    function dropCig() {
+      if (passedOut) return;
+      const x = Math.random() * 320 + 20;
+      cig = { x, y: 0, vy: 1 };
+      target = { x, y: 0, type: "cig" };
+    }
+
+    function rideMotorcycle() {
+      if (passedOut || onMotorcycle) return;
+      onMotorcycle = true;
+      motoTimer = 60 * 4;
+      motoVX = (Math.random() < 0.5 ? -1 : 1) * 12;
+      motoVY = (Math.random() < 0.5 ? -1 : 1) * 10;
+      target = null;
+
+      if (drunkness >= 50) {
+        logAction("Joe is drunk driving.");
+      } else {
+        logAction("Joe rode his motorcycle.");
+      }
+    }
+
+    function punchJoe() {
+      if (passedOut) return;
+      owTimer = 30;
+      punchOverlay = true;
+      happiness = Math.max(0, happiness - 10);
+      logAction("You punched Joe.");
+    }
+
+    function getDrunkBeerMessage() {
+      if (drunkness < 30) return "Joe drank a beer.";
+      if (drunkness < 60) return "Joe *really* enjoyed that beer.";
+      if (drunkness < 90) return "Joe is getting sloppy.";
+      if (drunkness < 100) return "Joe is completely wasted.";
+      return "Joe blacked out mid-chug.";
+    }
+
+    function logAction(text) {
+      log.innerHTML += `<div>${text}</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    draw();
+  </script>
+</body>
+</html>
